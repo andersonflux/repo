@@ -72,8 +72,11 @@ setup(
     extras_require=extras_require,
     packages=[
         'electrum_mona',
+        'electrum_mona.qrreader',
         'electrum_mona.gui',
         'electrum_mona.gui.qt',
+        'electrum_mona.gui.qt.qrreader',
+        'electrum_mona.gui.qt.qrreader.qtmultimedia',
         'electrum_mona.plugins',
     ] + [('electrum_mona.plugins.'+pkg) for pkg in find_packages('electrum_mona/plugins')],
     package_dir={

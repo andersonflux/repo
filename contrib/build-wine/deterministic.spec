@@ -57,12 +57,12 @@ datas += collect_data_files('bitbox02')
 # We don't put these files in to actually include them in the script but to make the Analysis method scan them for imports
 a = Analysis([home+'run_electrum',
               home+'electrum_mona/gui/qt/main_window.py',
+              home+'electrum_mona/gui/qt/qrreader/qtmultimedia/camera_dialog.py',
               home+'electrum_mona/gui/text.py',
               home+'electrum_mona/util.py',
               home+'electrum_mona/wallet.py',
               home+'electrum_mona/simple_config.py',
               home+'electrum_mona/bitcoin.py',
-              home+'electrum_mona/blockchain.py',
               home+'electrum_mona/dnssec.py',
               home+'electrum_mona/commands.py',
               home+'electrum_mona/plugins/cosigner_pool/qt.py',
