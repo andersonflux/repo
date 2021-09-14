@@ -79,7 +79,7 @@ from electrum_mona.exchange_rate import FxThread
 from electrum_mona.simple_config import SimpleConfig
 from electrum_mona.logging import Logger
 from electrum_mona.lnutil import ln_dummy_address, extract_nodeid, ConnStringFormatError
-from electrum_mona.lnaddr import lndecode, LnDecodeException
+from electrum_mona.lnaddr import lndecode, LnInvoiceException
 
 from .exception_window import Exception_Hook
 from .amountedit import AmountEdit, BTCAmountEdit, FreezableLineEdit, FeerateEdit, SizedFreezableLineEdit
@@ -1371,10 +1371,11 @@ class ElectrumWindow(QMainWindow, MessageBoxMixin, Logger):
         self.message_e = SizedFreezableLineEdit(width=700)
         grid.addWidget(self.message_e, 2, 1, 1, -1)
 
-        msg = _('Amount to be sent.') + '\n\n' \
-              + _('The amount will be displayed in red if you do not have enough funds in your wallet.') + ' ' \
-              + _('Note that if you have frozen some of your addresses, the available funds will be lower than your total balance.') + '\n\n' \
-              + _('Keyboard shortcut: type "!" to send all your coins.')
+        msg = (_('The amount to be received by the recipient.') + ' '
+               + _('Fees are paid by the sender.') + '\n\n'
+               + _('The amount will be displayed in red if you do not have enough funds in your wallet.') + ' '
+               + _('Note that if you have frozen some of your addresses, the available funds will be lower than your total balance.') + '\n\n'
+               + _('Keyboard shortcut: type "!" to send all your coins.'))
         amount_label = HelpLabel(_('Amount'), msg)
         grid.addWidget(amount_label, 3, 0)
         grid.addWidget(self.amount_e, 3, 1)
@@ -1964,12 +1965,14 @@ class ElectrumWindow(QMainWindow, MessageBoxMixin, Logger):
         else:
             self.payment_request_error_signal.emit()
 
-    def parse_lightning_invoice(self, invoice):
+    def set_ln_invoice(self, invoice: str):
         """Parse ln invoice, and prepare the send tab for it."""
         try:
             lnaddr = lndecode(invoice)
-        except Exception as e:
-            raise LnDecodeException(e) from e
+        except LnInvoiceException as e:
+            self.show_error(_("Error parsing Lightning invoice") + f":\n{e}")
+            return
+
         pubkey = bh2u(lnaddr.pubkey.serialize())
         for k,v in lnaddr.tags:
             if k == 'd':
@@ -1979,25 +1982,22 @@ class ElectrumWindow(QMainWindow, MessageBoxMixin, Logger):
              description = ''
         self.payto_e.setFrozen(True)
         self.payto_e.setText(pubkey)
+        self.payto_e.lightning_invoice = invoice
         self.message_e.setText(description)
         if lnaddr.get_amount_sat() is not None:
             self.amount_e.setAmount(lnaddr.get_amount_sat())
-        #self.amount_e.textEdited.emit("")
         self.set_onchain(False)
 
     def set_onchain(self, b):
         self._is_onchain = b
         self.max_button.setEnabled(b)
 
-    def pay_to_URI(self, URI):
-        if not URI:
-            return
+    def set_bip21(self, text: str):
         try:
-            out = util.parse_URI(URI, self.on_pr)
+            out = util.parse_URI(text, self.on_pr)
         except InvalidBitcoinURI as e:
             self.show_error(_("Error parsing URI") + f":\n{e}")
             return
-        self.show_send_tab()
         self.payto_URI = out
         r = out.get('r')
         sig = out.get('sig')
@@ -2018,8 +2018,19 @@ class ElectrumWindow(QMainWindow, MessageBoxMixin, Logger):
             self.message_e.setText(message)
         if amount:
             self.amount_e.setAmount(amount)
-            self.amount_e.textEdited.emit("")
 
+    def pay_to_URI(self, text: str):
+        if not text:
+            return
+        # first interpret as lightning invoice
+        bolt11_invoice = maybe_extract_bolt11_invoice(text)
+        if bolt11_invoice:
+            self.set_ln_invoice(bolt11_invoice)
+        else:
+            self.set_bip21(text)
+        # update fiat amount
+        self.amount_e.textEdited.emit("")
+        self.show_send_tab()
 
     def do_clear(self):
         self.max_button.setChecked(False)

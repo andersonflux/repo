@@ -14,12 +14,12 @@ zmqpubrawtx=tcp://127.0.0.1:28333
 fallbackfee=0.0002
 [regtest]
 rpcbind=0.0.0.0
-rpcport=19443
+rpcport=18554
 EOF
 rm -rf ~/.monacoin/regtest
-screen -S monacoind -X quit || true
-screen -S monacoind -m -d monacoind -regtest
+monacoind -regtest &
 sleep 6
-# bitcoin-cli createwallet test_wallet
+# monacoin-cli createwallet test_wallet
 addr=$(monacoin-cli getnewaddress)
-monacoin-cli generatetoaddress 150 $addr > /dev/null
+monacoin-cli generatetoaddress 150 $addr
+tail -f ~/.monacoin/regtest/debug.log
