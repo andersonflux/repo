@@ -1,64 +1,4 @@
 task:
-  container:
-    image: $ELECTRUM_IMAGE
-    cpu: 1
-    memory: 1G
-  matrix:
-    - name: Tox Python $ELECTRUM_PYTHON_VERSION
-      env:
-        ELECTRUM_IMAGE: python:$ELECTRUM_PYTHON_VERSION
-        TOXENV: py3
-        ELECTRUM_PYTHON_NAME: python3
-      matrix:
-       - env:
-           ELECTRUM_PYTHON_VERSION: 3.6
-       - env:
-           ELECTRUM_PYTHON_VERSION: 3.7
-       - env:
-           ELECTRUM_PYTHON_VERSION: 3.8
-       - env:
-           ELECTRUM_PYTHON_VERSION: 3.9
-       - env:
-           ELECTRUM_PYTHON_VERSION: 3
-       - env:
-           ELECTRUM_PYTHON_VERSION: rc
-    - name: Tox PyPy
-      allow_failures: true
-      env:
-        ELECTRUM_IMAGE: pypy:3
-        TOXENV: pypy3
-        ELECTRUM_PYTHON_NAME: pypy3
-  pip_cache:
-    folder: ~/.cache/pip
-    fingerprint_script: echo $ELECTRUM_IMAGE && cat $ELECTRUM_REQUIREMENTS
-    populate_script: mkdir -p ~/.cache/pip
-  electrum_cache:
-    folder: /tmp/electrum-build
-    populate_script: mkdir -p /tmp/electrum-build
-  version_script:
-    - $ELECTRUM_PYTHON_NAME --version
-  tag_script:
-    - git tag
-  install_script:
-    - apt-get update
-    - apt-get -y install libsecp256k1-0
-    - pip install -r $ELECTRUM_REQUIREMENTS
-  tox_script:
-    - tox
-  coveralls_script:
-    - coveralls
-  env:
-    ELECTRUM_REQUIREMENTS: contrib/requirements/requirements-travis.txt
-    # following CI_* env vars are set up for coveralls
-    CI_NAME: "CirrusCI"
-    CI_BUILD_NUMBER: $CIRRUS_BUILD_ID
-    CI_JOB_ID: $CIRRUS_TASK_ID
-    CI_BUILD_URL: "https://cirrus-ci.com/task/$CIRRUS_TASK_ID"
-    CI_BRANCH: $CIRRUS_BRANCH
-    CI_PULL_REQUEST: $CIRRUS_PR
-    # in addition, COVERALLS_REPO_TOKEN is set as an "override" in https://cirrus-ci.com/settings/...
-
-task:
   name: Regtest functional tests
   container:
     image: $ELECTRUM_IMAGE
@@ -96,34 +36,6 @@ task:
     ALLOW_ROOT: 1
 
 task:
-  container:
-    image: $ELECTRUM_IMAGE
-    cpu: 1
-    memory: 1G
-  pip_cache:
-    folder: ~/.cache/pip
-    fingerprint_script: echo Flake8 && echo $ELECTRUM_IMAGE && cat $ELECTRUM_REQUIREMENTS
-    populate_script: mkdir -p ~/.cache/pip
-  electrum_cache:
-    folder: /tmp/electrum-build
-    populate_script: mkdir -p /tmp/electrum-build
-  install_script:
-    - pip install flake8
-  flake8_script:
-    - flake8 . --count --select=$ELECTRUM_LINTERS --show-source --statistics
-  env:
-    ELECTRUM_IMAGE: python:3.7
-    ELECTRUM_REQUIREMENTS: contrib/requirements/requirements-travis.txt
-  matrix:
-    - name: Flake8 Mandatory
-      env:
-        ELECTRUM_LINTERS: E9,F63,F7,F82
-    - name: Flake8 Non-Mandatory
-      env:
-        ELECTRUM_LINTERS: E,F,W,C90
-      allow_failures: true
-
-task:
   name: Windows build
   container:
     dockerfile: contrib/build-wine/Dockerfile
@@ -135,7 +47,7 @@ task:
   binaries_artifacts:
     path: "contrib/build-wine/dist/*"
   env:
-    CIRRUS_WORKING_DIR: /opt/wine64/drive_c/electrum
+    CIRRUS_WORKING_DIR: /opt/wine64/drive_c/electrum-mona
 
 task:
   name: Android build
