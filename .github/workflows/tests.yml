@@ -83,8 +83,8 @@ jobs:
         pip install electrumx
     - name: before_script
       run: |
-        electrum_mona/tests/regtest/start_bitcoind.sh
-        electrum_mona/tests/regtest/start_electrumx.sh
+        electrum_mona/tests/regtest/run_bitcoind.sh
+        electrum_mona/tests/regtest/run_electrumx.sh
     - name: script
       run: |
         python3 -m unittest electrum_mona/tests/regtest.py
