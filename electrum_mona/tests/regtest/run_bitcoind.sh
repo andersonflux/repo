@@ -14,7 +14,7 @@ zmqpubrawtx=tcp://127.0.0.1:28333
 fallbackfee=0.0002
 [regtest]
 rpcbind=0.0.0.0
-rpcport=18554
+rpcport=19443
 EOF
 rm -rf ~/.monacoin/regtest
 monacoind -regtest &
