@@ -19,7 +19,7 @@ task:
     - apt-get -y install libsecp256k1-0 curl jq bc
     - pip3 install .[tests]
     - pip3 install electrumx
-    - apt-get install software-properties-common
+    - apt-get -y install software-properties-common
     - add-apt-repository -y ppa:visvirial/monacoin
     - apt-get -qq update
     - apt-get install -yq monacoind
