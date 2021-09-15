@@ -19,10 +19,12 @@ task:
     - apt-get -y install libsecp256k1-0 curl jq bc
     - pip3 install .[tests]
     - pip3 install electrumx
-    - apt-get -y install software-properties-common
-    - add-apt-repository -y ppa:visvirial/monacoin
-    - apt-get -qq update
-    - apt-get install -yq monacoind
+    - "BITCOIND_VERSION="0.17.1"
+    - BITCOIND_FILENAME=monacoin-$BITCOIND_VERSION-x86_64-linux-gnu.tar.gz
+    - BITCOIND_PATH=/tmp/bitcoind/$BITCOIND_FILENAME
+    - BITCOIND_URL=https://github.com/monacoinproject/monacoin/releases/download/monacoin-$BITCOIND_VERSION/$BITCOIND_FILENAME
+    - tar -xaf $BITCOIND_PATH || (rm -f /tmp/bitcoind/* && curl --output $BITCOIND_PATH $BITCOIND_URL && tar -xaf $BITCOIND_PATH)
+    - cp -a monacoin-$BITCOIND_VERSION/* /usr/
   bitcoind_service_background_script:
     - electrum_mona/tests/regtest/run_bitcoind.sh
   electrumx_service_background_script:
