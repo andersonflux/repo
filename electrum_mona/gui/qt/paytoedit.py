@@ -31,7 +31,7 @@ from typing import NamedTuple, Sequence, Optional, List, TYPE_CHECKING
 from PyQt5.QtGui import QFontMetrics, QFont
 
 from electrum_mona import bitcoin
-from electrum_mona.util import bfh, maybe_extract_bolt11_invoice, BITCOIN_BIP21_URI_SCHEME
+from electrum_mona.util import bfh, maybe_extract_bolt11_invoice, BITCOIN_BIP21_URI_SCHEME, parse_max_spend
 from electrum_mona.transaction import PartialTxOutput
 from electrum_mona.bitcoin import opcodes, construct_script
 from electrum_mona.logging import Logger
@@ -131,8 +131,8 @@ class PayToEdit(CompletionTextEdit, ScanQRTextEdit, Logger):
         x = x.strip()
         if not x:
             raise Exception("Amount is empty")
-        if x == '!':
-            return '!'
+        if parse_max_spend(x):
+            return x
         p = pow(10, self.amount_edit.decimal_point())
         try:
             return int(p * Decimal(x))
@@ -203,7 +203,7 @@ class PayToEdit(CompletionTextEdit, ScanQRTextEdit, Logger):
                         idx=i, line_content=line.strip(), exc=e, is_multiline=True))
                     continue
             outputs.append(output)
-            if output.value == '!':
+            if parse_max_spend(output.value):
                 is_max = True
             else:
                 total += output.value
@@ -226,12 +226,14 @@ class PayToEdit(CompletionTextEdit, ScanQRTextEdit, Logger):
     def get_destination_scriptpubkey(self) -> Optional[bytes]:
         return self.payto_scriptpubkey
 
-    def get_outputs(self, is_max):
+    def get_outputs(self, is_max: bool) -> List[PartialTxOutput]:
         if self.payto_scriptpubkey:
             if is_max:
                 amount = '!'
             else:
                 amount = self.amount_edit.get_amount()
+                if amount is None:
+                    return []
             self.outputs = [PartialTxOutput(scriptpubkey=self.payto_scriptpubkey, value=amount)]
 
         return self.outputs[:]
