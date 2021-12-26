@@ -31,7 +31,7 @@ from PyQt5.QtWidgets import (QWidget, QLabel, QPushButton, QTextEdit,
                              QMessageBox, QHBoxLayout, QVBoxLayout)
 
 from electrum_mona.i18n import _
-from electrum_mona.base_crash_reporter import BaseCrashReporter
+from electrum_mona.base_crash_reporter import BaseCrashReporter, EarlyExceptionsQueue
 from electrum_mona.logging import Logger
 from electrum_mona import constants
 from electrum_mona.network import Network
@@ -172,6 +172,7 @@ class Exception_Hook(QObject, Logger):
 
         sys.excepthook = self.handler
         self._report_exception.connect(_show_window)
+        EarlyExceptionsQueue.set_hook_as_ready()
 
     @classmethod
     def maybe_setup(cls, *, config: 'SimpleConfig', wallet: 'Abstract_Wallet' = None) -> None:

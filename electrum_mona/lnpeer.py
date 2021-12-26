@@ -14,7 +14,7 @@ from datetime import datetime
 import functools
 
 import aiorpcx
-from aiorpcx import TaskGroup
+from aiorpcx import TaskGroup, ignore_after
 
 from .crypto import sha256, sha256d
 from . import bitcoin, util
@@ -69,6 +69,8 @@ class Peer(Logger):
     SPAMMY_MESSAGES = (
         'ping', 'pong', 'channel_announcement', 'node_announcement', 'channel_update',)
 
+    DELAY_INC_MSG_PROCESSING_SLEEP = 0.01
+
     def __init__(
             self,
             lnworker: Union['LNGossip', 'LNWallet'],
@@ -109,6 +111,8 @@ class Peer(Logger):
         self.received_htlc_removed_event = asyncio.Event()
         self._htlc_switch_iterstart_event = asyncio.Event()
         self._htlc_switch_iterdone_event = asyncio.Event()
+        self._received_revack_event = asyncio.Event()
+        self.downstream_htlc_resolved_event = asyncio.Event()
 
     def send_message(self, message_name: str, **kwargs):
         assert type(message_name) is str
@@ -478,7 +482,10 @@ class Peer(Logger):
             raise GracefulDisconnect(f'initialize failed: {repr(e)}') from e
         async for msg in self.transport.read_messages():
             self.process_message(msg)
-            await asyncio.sleep(.01)
+            if self.DELAY_INC_MSG_PROCESSING_SLEEP:
+                # rate-limit message-processing a bit, to make it harder
+                # for a single peer to bog down the event loop / cpu:
+                await asyncio.sleep(self.DELAY_INC_MSG_PROCESSING_SLEEP)
 
     def on_reply_short_channel_ids_end(self, payload):
         self.querying.set()
@@ -494,6 +501,9 @@ class Peer(Logger):
             pass
         self.lnworker.peer_closed(self)
         self.got_disconnected.set()
+
+    def is_shutdown_anysegwit(self):
+        return self.features.supports(LnFeatures.OPTION_SHUTDOWN_ANYSEGWIT_OPT)
 
     def is_static_remotekey(self):
         return self.features.supports(LnFeatures.OPTION_STATIC_REMOTEKEY_OPT)
@@ -531,7 +541,7 @@ class Peer(Logger):
             static_remotekey = bfh(wallet.get_public_key(addr))
         else:
             static_remotekey = None
-        dust_limit_sat = bitcoin.DUST_LIMIT_DEFAULT_SAT_LEGACY
+        dust_limit_sat = bitcoin.DUST_LIMIT_P2PKH
         reserve_sat = max(funding_sat // 100, dust_limit_sat)
         # for comparison of defaults, see
         # https://github.com/ACINQ/eclair/blob/afa378fbb73c265da44856b4ad0f2128a88ae6c6/eclair-core/src/main/resources/reference.conf#L66
@@ -1190,16 +1200,17 @@ class Peer(Logger):
         chan.receive_fail_htlc(htlc_id, error_bytes=reason)  # TODO handle exc and maybe fail channel (e.g. bad htlc_id)
         self.maybe_send_commitment(chan)
 
-    def maybe_send_commitment(self, chan: Channel):
+    def maybe_send_commitment(self, chan: Channel) -> bool:
         # REMOTE should revoke first before we can sign a new ctx
         if chan.hm.is_revack_pending(REMOTE):
-            return
+            return False
         # if there are no changes, we will not (and must not) send a new commitment
         if not chan.has_pending_changes(REMOTE):
-            return
+            return False
         self.logger.info(f'send_commitment. chan {chan.short_channel_id}. ctn: {chan.get_next_ctn(REMOTE)}.')
         sig_64, htlc_sigs = chan.sign_next_commitment()
         self.send_message("commitment_signed", channel_id=chan.channel_id, signature=sig_64, num_htlcs=len(htlc_sigs), htlc_signature=b"".join(htlc_sigs))
+        return True
 
     def pay(self, *,
             route: 'LNPaymentRoute',
@@ -1344,6 +1355,8 @@ class Peer(Logger):
         #        - for example; atm we forward first and then persist "forwarding_info",
         #          so if we segfault in-between and restart, we might forward an HTLC twice...
         #          (same for trampoline forwarding)
+        #        - we could check for the exposure to dust HTLCs, see:
+        #          https://github.com/ACINQ/eclair/pull/1985
         forwarding_enabled = self.network.config.get('lightning_forward_payments', False)
         if not forwarding_enabled:
             self.logger.info(f"forwarding is disabled. failing htlc.")
@@ -1414,6 +1427,7 @@ class Peer(Logger):
         except BaseException as e:
             self.logger.info(f"failed to forward htlc: error sending message. {e}")
             raise OnionRoutingFailure(code=OnionFailureCode.TEMPORARY_CHANNEL_FAILURE, data=outgoing_chan_upd_message)
+        next_peer.maybe_send_commitment(next_chan)
         return next_chan_scid, next_htlc.htlc_id
 
     def maybe_forward_trampoline(
@@ -1625,6 +1639,8 @@ class Peer(Logger):
         chan.receive_revocation(rev)
         self.lnworker.save_channel(chan)
         self.maybe_send_commitment(chan)
+        self._received_revack_event.set()
+        self._received_revack_event.clear()
 
     def on_update_fee(self, chan: Channel, payload):
         feerate = payload["feerate_per_kw"]
@@ -1693,11 +1709,15 @@ class Peer(Logger):
         if their_upfront_scriptpubkey:
             if not (their_scriptpubkey == their_upfront_scriptpubkey):
                 raise UpfrontShutdownScriptViolation("remote didn't use upfront shutdown script it commited to in channel opening")
-        # BOLT-02 restrict the scriptpubkey to some templates:
-        if not (match_script_against_template(their_scriptpubkey, transaction.SCRIPTPUBKEY_TEMPLATE_WITNESS_V0)
-                or match_script_against_template(their_scriptpubkey, transaction.SCRIPTPUBKEY_TEMPLATE_P2SH)
-                or match_script_against_template(their_scriptpubkey, transaction.SCRIPTPUBKEY_TEMPLATE_P2PKH)):
-            raise Exception(f'scriptpubkey in received shutdown message does not conform to any template: {their_scriptpubkey.hex()}')
+        else:
+            # BOLT-02 restrict the scriptpubkey to some templates:
+            if self.is_shutdown_anysegwit() and match_script_against_template(their_scriptpubkey, transaction.SCRIPTPUBKEY_TEMPLATE_ANYSEGWIT):
+                pass
+            elif match_script_against_template(their_scriptpubkey, transaction.SCRIPTPUBKEY_TEMPLATE_WITNESS_V0):
+                pass
+            else:
+                raise Exception(f'scriptpubkey in received shutdown message does not conform to any template: {their_scriptpubkey.hex()}')
+
         chan_id = chan.channel_id
         if chan_id in self.shutdown_received:
             self.shutdown_received[chan_id].set_result(payload)
@@ -1754,9 +1774,9 @@ class Peer(Logger):
         # BOLT2: The sending node MUST set fee less than or equal to the base fee of the final ctx
         max_fee = chan.get_latest_fee(LOCAL if is_local else REMOTE)
         our_fee = min(our_fee, max_fee)
-        drop_remote = False
+        drop_to_remote = False
         def send_closing_signed():
-            our_sig, closing_tx = chan.make_closing_tx(our_scriptpubkey, their_scriptpubkey, fee_sat=our_fee, drop_remote=drop_remote)
+            our_sig, closing_tx = chan.make_closing_tx(our_scriptpubkey, their_scriptpubkey, fee_sat=our_fee, drop_remote=drop_to_remote)
             self.send_message('closing_signed', channel_id=chan.channel_id, fee_satoshis=our_fee, signature=our_sig)
         def verify_signature(tx, sig):
             their_pubkey = chan.config[REMOTE].multisig_key.pubkey
@@ -1777,13 +1797,23 @@ class Peer(Logger):
             # verify their sig: they might have dropped their output
             our_sig, closing_tx = chan.make_closing_tx(our_scriptpubkey, their_scriptpubkey, fee_sat=their_fee, drop_remote=False)
             if verify_signature(closing_tx, their_sig):
-                drop_remote = False
+                drop_to_remote = False
             else:
                 our_sig, closing_tx = chan.make_closing_tx(our_scriptpubkey, their_scriptpubkey, fee_sat=their_fee, drop_remote=True)
                 if verify_signature(closing_tx, their_sig):
-                    drop_remote = True
+                    drop_to_remote = True
                 else:
+                    # this can happen if we consider our output too valuable to drop,
+                    # but the remote drops it because it violates their dust limit
                     raise Exception('failed to verify their signature')
+            # at this point we know how the closing tx looks like
+            # check that their output is above their scriptpubkey's network dust limit
+            to_remote_set = closing_tx.get_output_idxs_from_scriptpubkey(their_scriptpubkey.hex())
+            if not drop_to_remote and to_remote_set:
+                to_remote_idx = to_remote_set.pop()
+                to_remote_amount = closing_tx.outputs()[to_remote_idx].value
+                transaction.check_scriptpubkey_template_and_dust(their_scriptpubkey, to_remote_amount)
+
             # Agree if difference is lower or equal to one (see below)
             if abs(our_fee - their_fee) < 2:
                 our_fee = their_fee
@@ -1819,7 +1849,15 @@ class Peer(Logger):
         while True:
             self._htlc_switch_iterdone_event.set()
             self._htlc_switch_iterdone_event.clear()
-            await asyncio.sleep(0.1)  # TODO maybe make this partly event-driven
+            # We poll every 0.1 sec to check if there is work to do,
+            # or we can also be triggered via events.
+            # When forwarding an HTLC originating from this peer (the upstream),
+            # we can get triggered for events that happen on the downstream peer.
+            # TODO: trampoline forwarding relies on the polling
+            async with ignore_after(0.1):
+                async with TaskGroup(wait=any) as group:
+                    await group.spawn(self._received_revack_event.wait())
+                    await group.spawn(self.downstream_htlc_resolved_event.wait())
             self._htlc_switch_iterstart_event.set()
             self._htlc_switch_iterstart_event.clear()
             self.ping_if_required()
@@ -1831,6 +1869,8 @@ class Peer(Logger):
                 done = set()
                 unfulfilled = chan.unfulfilled_htlcs
                 for htlc_id, (local_ctn, remote_ctn, onion_packet_hex, forwarding_info) in unfulfilled.items():
+                    if forwarding_info:
+                        self.lnworker.downstream_htlc_to_upstream_peer_map[forwarding_info] = self.pubkey
                     if not chan.hm.is_htlc_irrevocably_added_yet(htlc_proposer=REMOTE, htlc_id=htlc_id):
                         continue
                     htlc = chan.hm.get_htlc_by_id(REMOTE, htlc_id)
@@ -1856,6 +1896,7 @@ class Peer(Logger):
                             error_bytes = construct_onion_error(e, onion_packet, our_onion_private_key=self.privkey)
                     if fw_info:
                         unfulfilled[htlc_id] = local_ctn, remote_ctn, onion_packet_hex, fw_info
+                        self.lnworker.downstream_htlc_to_upstream_peer_map[fw_info] = self.pubkey
                     elif preimage or error_reason or error_bytes:
                         if preimage:
                             if not self.lnworker.enable_htlc_settle:
@@ -1874,7 +1915,10 @@ class Peer(Logger):
                         done.add(htlc_id)
                 # cleanup
                 for htlc_id in done:
-                    unfulfilled.pop(htlc_id)
+                    local_ctn, remote_ctn, onion_packet_hex, forwarding_info = unfulfilled.pop(htlc_id)
+                    if forwarding_info:
+                        self.lnworker.downstream_htlc_to_upstream_peer_map.pop(forwarding_info, None)
+                self.maybe_send_commitment(chan)
 
     def _maybe_cleanup_received_htlcs_pending_removal(self) -> None:
         done = set()

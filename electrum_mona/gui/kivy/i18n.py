@@ -50,6 +50,6 @@ class _(str):
             except:
                 pass
         # Note that all invocations of _() inside the core electrum library
-        # use electrum.i18n instead of electrum.gui.kivy.i18n, so we should update the
+        # use electrum_mona.i18n instead of electrum_mona.gui.kivy.i18n, so we should update the
         # language there as well:
         set_language(lang)

@@ -41,6 +41,7 @@ HTLC_OUTPUT_WEIGHT = 172
 
 BTC_TO_MONA_CONVERSION_RATE = 600 #TODO monacoin is 600.
 LN_MAX_FUNDING_SAT = pow(2, 24 * BTC_TO_MONA_CONVERSION_RATE) - 1
+DUST_LIMIT_MAX = 1000
 
 # dummy address for fee estimation of funding tx
 def ln_dummy_address():
@@ -104,10 +105,10 @@ class ChannelConfig(StoredObject):
             raise Exception(f"{conf_name}. insane initial_msat={self.initial_msat}. (funding_sat={funding_sat})")
         if self.reserve_sat < self.dust_limit_sat:
             raise Exception(f"{conf_name}. MUST set channel_reserve_satoshis greater than or equal to dust_limit_satoshis")
-        # technically this could be using the lower DUST_LIMIT_DEFAULT_SAT_SEGWIT
-        # but other implementations are checking against this value too; also let's be conservative
-        if self.dust_limit_sat < bitcoin.DUST_LIMIT_DEFAULT_SAT_LEGACY:
+        if self.dust_limit_sat < bitcoin.DUST_LIMIT_UNKNOWN_SEGWIT:
             raise Exception(f"{conf_name}. dust limit too low: {self.dust_limit_sat} sat")
+        if self.dust_limit_sat > DUST_LIMIT_MAX:
+            raise Exception(f"{conf_name}. dust limit too high: {self.dust_limit_sat} sat")
         if self.reserve_sat > funding_sat // 100:
             raise Exception(f"{conf_name}. reserve too high: {self.reserve_sat}, funding_sat: {funding_sat}")
         if self.htlc_minimum_msat > 1_000:
@@ -509,19 +510,11 @@ def derive_blinded_privkey(basepoint_secret: bytes, per_commitment_secret: bytes
 def make_htlc_tx_output(amount_msat, local_feerate, revocationpubkey, local_delayedpubkey, success, to_self_delay):
     assert type(amount_msat) is int
     assert type(local_feerate) is int
-    assert type(revocationpubkey) is bytes
-    assert type(local_delayedpubkey) is bytes
-    script = bfh(construct_script([
-        opcodes.OP_IF,
-        revocationpubkey,
-        opcodes.OP_ELSE,
-        to_self_delay,
-        opcodes.OP_CHECKSEQUENCEVERIFY,
-        opcodes.OP_DROP,
-        local_delayedpubkey,
-        opcodes.OP_ENDIF,
-        opcodes.OP_CHECKSIG,
-    ]))
+    script = make_commitment_output_to_local_witness_script(
+        revocation_pubkey=revocationpubkey,
+        to_self_delay=to_self_delay,
+        delayed_pubkey=local_delayedpubkey,
+    )
 
     p2wsh = bitcoin.redeem_script_to_address('p2wsh', bh2u(script))
     weight = HTLC_SUCCESS_WEIGHT if success else HTLC_TIMEOUT_WEIGHT
@@ -896,7 +889,11 @@ def make_commitment(
     return tx
 
 def make_commitment_output_to_local_witness_script(
-        revocation_pubkey: bytes, to_self_delay: int, delayed_pubkey: bytes) -> bytes:
+        revocation_pubkey: bytes, to_self_delay: int, delayed_pubkey: bytes,
+) -> bytes:
+    assert type(revocation_pubkey) is bytes
+    assert type(to_self_delay) is int
+    assert type(delayed_pubkey) is bytes
     script = bfh(construct_script([
         opcodes.OP_IF,
         revocation_pubkey,
@@ -1027,6 +1024,12 @@ class LnFeatures(IntFlag):
     _ln_feature_contexts[OPTION_TRAMPOLINE_ROUTING_REQ] = (LNFC.INIT | LNFC.NODE_ANN | LNFC.INVOICE)
     _ln_feature_contexts[OPTION_TRAMPOLINE_ROUTING_OPT] = (LNFC.INIT | LNFC.NODE_ANN | LNFC.INVOICE)
 
+    OPTION_SHUTDOWN_ANYSEGWIT_REQ = 1 << 26
+    OPTION_SHUTDOWN_ANYSEGWIT_OPT = 1 << 27
+
+    _ln_feature_contexts[OPTION_SHUTDOWN_ANYSEGWIT_REQ] = (LNFC.INIT | LNFC.NODE_ANN)
+    _ln_feature_contexts[OPTION_SHUTDOWN_ANYSEGWIT_OPT] = (LNFC.INIT | LNFC.NODE_ANN)
+
     # temporary
     OPTION_TRAMPOLINE_ROUTING_REQ_ECLAIR = 1 << 50
     OPTION_TRAMPOLINE_ROUTING_OPT_ECLAIR = 1 << 51
@@ -1115,6 +1118,7 @@ LN_FEATURES_IMPLEMENTED = (
         | LnFeatures.PAYMENT_SECRET_OPT | LnFeatures.PAYMENT_SECRET_REQ
         | LnFeatures.BASIC_MPP_OPT | LnFeatures.BASIC_MPP_REQ
         | LnFeatures.OPTION_TRAMPOLINE_ROUTING_OPT | LnFeatures.OPTION_TRAMPOLINE_ROUTING_REQ
+        | LnFeatures.OPTION_SHUTDOWN_ANYSEGWIT_OPT | LnFeatures.OPTION_SHUTDOWN_ANYSEGWIT_REQ
 )
 
 
