@@ -1,9 +1,11 @@
 #!/bin/bash
 
+# It need wine. The version depends on python and the library, so you need to match it with your build.
+# winetrick may try to install vcrun2015(x64). Kill the description of winetrick.
 LYRA2RE_HASH_PYTHON_URL=https://github.com/wakiyamap/lyra2re-hash-python.git
 WINETRICKS_MASTER_URL=https://raw.githubusercontent.com/Winetricks/winetricks/master/src/winetricks
 
-PYTHON_VERSION=3.8.7
+PYTHON_VERSION=3.9.7
 
 ## These settings probably don't need change
 export WINEPREFIX=/opt/wine64
@@ -85,17 +87,18 @@ wine mingw-get install gcc
 wine mingw-get install mingw-utils
 wine mingw-get install mingw32-libz
 
-printf "[build]\ncompiler=mingw32\n" > $WINEPREFIX/drive_c/$PYTHON_FOLDER/Lib/distutils/distutils.cfg
+printf "[build]\ncompiler=mingw32\n" > $WINEPREFIX/drive_c/$PYTHON_FOLDER/Lib/site-packages/setuptools/_distutils/distutils.cfg
 
 # Install VC++2015
 wget $WINETRICKS_MASTER_URL
 bash winetricks vcrun2015
 
-# build msvcr140.dll
-cp msvcr140.patch $WINEPREFIX/drive_c/$PYTHON_FOLDER/Lib/distutils
-pushd $WINEPREFIX/drive_c/$PYTHON_FOLDER/Lib/distutils
-patch < msvcr140.patch
+# build msvcr140.dll & remove ucrt
+cp remove_ucrt.patch $WINEPREFIX/drive_c/$PYTHON_FOLDER/Lib/site-packages/setuptools/_distutils
+pushd $WINEPREFIX/drive_c/$PYTHON_FOLDER/Lib/site-packages/setuptools/_distutils
+patch < remove_ucrt.patch
 popd
+
 
 wine pexports $WINEPREFIX/drive_c/$PYTHON_FOLDER/vcruntime140.dll >vcruntime140.def
 wine dlltool -dllname $WINEPREFIX/drive_c/$PYTHON_FOLDER/vcruntime140.dll --def vcruntime140.def --output-lib libvcruntime140.a
