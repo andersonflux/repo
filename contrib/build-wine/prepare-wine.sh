@@ -5,9 +5,9 @@ NSIS_FILENAME=nsis-3.08-setup.exe
 NSIS_URL=https://downloads.sourceforge.net/project/nsis/NSIS%203/3.08/$NSIS_FILENAME
 NSIS_SHA256=bbc76be36ecb2fc00d493c91befdaf71654226ad8a4fc4dc338458916bf224d0
 
-LYRA2RE_HASH_PYTHON_URL=https://github.com/wakiyamap/lyra2re-hash-python/releases/download/1.1.2/lyra2re2_hash-1.1.2-cp38-cp38-win32.whl
-LYRA2RE_HASH_PYTHON_FILENAME=lyra2re2_hash-1.1.2-cp38-cp38-win32.whl
-LYRA2RE_HASH_PYTHON_SHA256=45c021ae2b992d516339f484e4031b06a8ef05d14faba4c840c3a17a4c9dfcf2
+LYRA2RE_HASH_PYTHON_URL=https://github.com/wakiyamap/lyra2re-hash-python/releases/download/1.1.2/lyra2re2_hash-1.1.2-cp39-cp39-win32.whl
+LYRA2RE_HASH_PYTHON_FILENAME=lyra2re2_hash-1.1.2-cp39-cp39-win32.whl
+LYRA2RE_HASH_PYTHON_SHA256=b21f346451324e3f09f2c153906b5f111cef8f5112934f0febdfbc0a647ddc48
 
 PYINSTALLER_REPO="https://github.com/SomberNight/pyinstaller.git"
 PYINSTALLER_COMMIT="80ee4d613ecf75a1226b960a560ee01459e65ddb"
