@@ -61,8 +61,8 @@ for k, v in detected_sigs.items():
 
 print("signers:", signers)
 
-gpg_name = lambda x: 'sombernight_releasekey' if x=='SomberNight' else x
-signers_list = ', '.join("<a href=\"https://raw.githubusercontent.com/spesmilo/electrum/master/pubkeys/%s.asc\">%s</a>"%(gpg_name(x), x) for x in signers)
+gpg_name = lambda x: 'sombernight_releasekey' if x=='wakiyamap' else x
+signers_list = ', '.join("<a href=\"https://raw.githubusercontent.com/wakiyamap/electrum-mona/master/pubkeys/%s.asc\">%s</a>"%(gpg_name(x), x) for x in signers)
 string = string.replace("##signers_list##", signers_list)
 
 for k, filename in files.items():

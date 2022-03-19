@@ -12,7 +12,9 @@ electrum_mona/locale/
 *_trial_temp
 packages
 env/
-.buildozer/
+.buildozer
+.buildozer_kivy/
+.buildozer_qml/
 bin/
 /app.fil
 .idea
@@ -48,6 +50,7 @@ contrib/android/android_debug.keystore
 contrib/secp256k1/
 contrib/zbar/
 contrib/libusb/
+contrib/.venv_make_packages/
 
 # shared objects
 electrum_mona/*.so
