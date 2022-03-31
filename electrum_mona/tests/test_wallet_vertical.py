@@ -12,7 +12,9 @@ from electrum_mona import SimpleConfig
 from electrum_mona.address_synchronizer import TX_HEIGHT_UNCONFIRMED, TX_HEIGHT_UNCONF_PARENT
 from electrum_mona.wallet import (sweep, Multisig_Wallet, Standard_Wallet, Imported_Wallet,
                              restore_wallet_from_text, Abstract_Wallet, BumpFeeStrategy)
-from electrum_mona.util import bfh, bh2u, create_and_start_event_loop, NotEnoughFunds
+from electrum_mona.util import (
+    bfh, bh2u, create_and_start_event_loop, NotEnoughFunds, UnrelatedTransactionException,
+    UserFacingException)
 from electrum_mona.transaction import (TxOutput, Transaction, PartialTransaction, PartialTxOutput,
                                   PartialTxInput, tx_from_any, TxOutpoint)
 from electrum_mona.mnemonic import seed_type
@@ -3164,4 +3166,3 @@ class TestWalletHistory_DoubleSpend(TestCaseForTestnet):
         txC = Transaction(self.transactions["2c9aa33d9c8ec649f9bfb84af027a5414b760be5231fe9eca4a95b9eb3f8a017"])
         w.add_transaction(txC)
         self.assertEqual(999890, sum(w.get_balance()))
-
